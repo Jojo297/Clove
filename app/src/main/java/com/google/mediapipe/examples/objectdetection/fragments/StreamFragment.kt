@@ -25,6 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.mediapipe.examples.objectdetection.ObjectDetectorHelper
 import com.google.mediapipe.examples.objectdetection.R
 import com.google.mediapipe.examples.objectdetection.databinding.FragmentStreamBinding
+import com.google.mediapipe.examples.objectdetection.utils.ModelManager.getModelFilePath
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
@@ -36,6 +37,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.tensorflow.lite.Interpreter
+import com.google.mediapipe.examples.objectdetection.utils.ModelManager.getModelFilePath
+
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -98,6 +101,7 @@ class StreamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         objectDetectorHelper = ObjectDetectorHelper(
             context = requireContext(),
             runningMode = RunningMode.LIVE_STREAM,
+//            modelPath = modelPath,
             objectDetectorListener = this
         )
     }
