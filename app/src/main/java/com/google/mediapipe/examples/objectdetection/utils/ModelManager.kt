@@ -34,12 +34,28 @@ object ModelManager {
                 throw Exception("Tidak ada model yang ditemukan dari API.")
             }
 
-            // Langkah 2: Loop melalui setiap URL untuk dibandingkan dengan file lokal.
+            // --- BARU: Logika untuk menghapus file lama ---
+            // 1. Dapatkan daftar NAMA FILE dari API untuk perbandingan yang efisien.
+            val remoteFileNames = modelUrls.map { it.substringAfterLast("/") }.toSet()
+
+            // 2. Dapatkan daftar file yang ada di direktori lokal.
+            val localFiles = modelDir.listFiles() ?: emptyArray()
+
+            // 3. Loop melalui file lokal dan hapus jika namanya tidak ada di daftar dari API.
+            localFiles.forEach { localFile ->
+                if (localFile.name !in remoteFileNames && localFile.name != "default_model.tflite") {
+                    Log.w(TAG, "🗑️ File lokal tidak ada di API, menghapus: ${localFile.name}")
+                    localFile.delete()
+                }
+            }
+            // --- AKHIR DARI LOGIKA BARU ---
+
+            // Langkah 2 (sebelumnya): Loop melalui setiap URL untuk dibandingkan dengan file lokal.
             for (modelUrl in modelUrls) {
                 val fileName = modelUrl.substringAfterLast("/")
                 val localFile = File(modelDir, fileName)
 
-                // Langkah 3: Jika file TIDAK ADA di storage, maka download.
+                // Langkah 3 (sebelumnya): Jika file TIDAK ADA di storage, maka download.
                 if (!localFile.exists()) {
                     Log.i(TAG, "📥 Model belum ada, download: $fileName")
                     downloadFile(modelUrl, localFile)
@@ -54,7 +70,6 @@ object ModelManager {
             listFilesInModelDir(context)
 
             // Langkah 4: Kembalikan path dari model PERTAMA dalam daftar untuk digunakan.
-            // Ini asumsi bahwa model pertama adalah yang akan dimuat oleh ObjectDetector.
             val firstModelFileName = modelUrls.first().substringAfterLast("/")
             return File(modelDir, firstModelFileName).absolutePath
 

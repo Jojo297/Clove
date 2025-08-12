@@ -41,7 +41,7 @@ class ObjectDetectorHelper(
     var threshold: Float = THRESHOLD_DEFAULT,
     var maxResults: Int = MAX_RESULTS_DEFAULT,
     var currentDelegate: Int = DELEGATE_CPU,
-    var currentModel: Int = efficientdet_lite2_cengkeh_V2,
+    var modelPath: String,
     var runningMode: RunningMode = RunningMode.IMAGE,
     val context: Context,
     // The listener is only used when running in RunningMode.LIVE_STREAM
@@ -70,6 +70,10 @@ class ObjectDetectorHelper(
 
     fun setupObjectDetector() {
         // Set general detection options, including number of used threads
+        if (modelPath.isEmpty()) {
+            objectDetectorListener?.onError("Model path is empty.")
+            return
+        }
         val baseOptionsBuilder = BaseOptions.builder()
 
         // Use the specified hardware for running the model. Default to CPU
@@ -84,12 +88,7 @@ class ObjectDetectorHelper(
             }
         }
 
-        val modelName = when (currentModel) {
-            efficientdet_lite2_cengkeh_V2 -> "efficientdet_lite2_cengkeh_V2.tflite"
-            else -> "efficientdet-lite0.tflite"
-        }
-
-        baseOptionsBuilder.setModelAssetPath(modelName)
+        baseOptionsBuilder.setModelAssetPath(modelPath)
 //        baseOptionsBuilder.setModelFilePath(currentModelPath)
 
         // Check if runningMode is consistent with objectDetectorListener
@@ -144,6 +143,12 @@ class ObjectDetectorHelper(
                 "Object detector failed to load model with error: " + e.message
             )
         }
+    }
+
+    fun changeModel(newModelPath: String) {
+        modelPath = newModelPath
+        clearObjectDetector()
+        setupObjectDetector()
     }
 
     // Return running status of recognizer helper

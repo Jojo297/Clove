@@ -130,4 +130,8 @@ dependencies {
     // USB Webcam
     implementation 'com.github.jiangdongguo:AndroidUSBCamera:3.3.3'
 
+    // swipe refresh
+    implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.2.0-alpha01"
+
+
 }

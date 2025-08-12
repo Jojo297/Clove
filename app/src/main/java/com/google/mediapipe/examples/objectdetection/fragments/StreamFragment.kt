@@ -18,6 +18,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.view.doOnLayout
 import androidx.fragment.app.Fragment
@@ -38,6 +39,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.tensorflow.lite.Interpreter
 import com.google.mediapipe.examples.objectdetection.utils.ModelManager.getModelFilePath
+import java.io.File
 
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -98,10 +100,29 @@ class StreamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
 
     // Set up the ObjectDetectorHelper in LIVE_STREAM mode
     private fun setupObjectDetector() {
+        // DIUBAH: Logika untuk mencari dan memuat model
+
+        // 1. Cari model yang tersedia di penyimpanan internal
+        val modelDir = File(requireContext().filesDir, "models")
+        val modelFile = modelDir.listFiles { _, name -> name.endsWith(".tflite") }?.firstOrNull()
+
+        // 2. Jika tidak ada model yang ditemukan, tampilkan pesan error dan hentikan setup
+        if (modelFile == null) {
+            Toast.makeText(
+                requireContext(),
+                "Model tidak ditemukan. Pastikan model sudah di-download.",
+                Toast.LENGTH_LONG
+            ).show()
+            Log.e("StreamFragment", "No .tflite model found in ${modelDir.absolutePath}")
+            return
+        }
+
+        // 3. Inisialisasi helper dengan path model yang ditemukan
+        Log.d("StreamFragment", "Loading model: ${modelFile.absolutePath}")
         objectDetectorHelper = ObjectDetectorHelper(
             context = requireContext(),
             runningMode = RunningMode.LIVE_STREAM,
-//            modelPath = modelPath,
+            modelPath = modelFile.absolutePath, // Berikan path file model
             objectDetectorListener = this
         )
     }

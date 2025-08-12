@@ -37,6 +37,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 
 
 class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
@@ -103,13 +104,25 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-//        Toast.makeText(context, "onViewCreated dipanggil", Toast.LENGTH_SHORT).show()
 
+        // DIUBAH: Logika untuk mencari model dan menginisialisasi ObjectDetectorHelper
+
+        // 1. Cari model yang tersedia di penyimpanan internal
+        val modelDir = File(requireContext().filesDir, "models")
+        val modelFile = modelDir.listFiles { _, name -> name.endsWith(".tflite") }?.firstOrNull()
+
+        // 2. Jika model tidak ditemukan, tampilkan pesan dan hentikan proses
+        if (modelFile == null) {
+            Toast.makeText(context, "Model tidak ditemukan di penyimpanan internal.", Toast.LENGTH_LONG).show()
+            Log.e("WebcamFragment", "No .tflite model found in ${modelDir.absolutePath}")
+            return
+        }
         context?.let { safeContext ->
             objectDetectorHelper = ObjectDetectorHelper(
-                context = safeContext,
+                context = requireContext(),
                 runningMode = RunningMode.LIVE_STREAM,
-                objectDetectorListener = this
+                objectDetectorListener = this,
+                modelPath = modelFile.absolutePath // Berikan path model yang valid
             )
             overlay.setRunningMode(RunningMode.LIVE_STREAM)
         }
