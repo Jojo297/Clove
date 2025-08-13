@@ -73,10 +73,9 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
     /** Blocking ML operations are performed using this executor */
     private lateinit var backgroundExecutor: ExecutorService
 
+    // Resumes camera setup and detector initialization when the app is foregrounded.
     override fun onResume() {
         super.onResume()
-        // Make sure that all permissions are still present, since the
-        // user could have removed them while the app was in paused state.
         if (!PermissionsFragment.hasPermissions(requireContext())) {
             Navigation.findNavController(
                 requireActivity(),
@@ -92,13 +91,11 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         }
     }
 
+    // Pauses the detection and releases detector resources to save power.
     override fun onPause() {
         super.onPause()
 
         if(this::objectDetectorHelper.isInitialized) {
-            // DIUBAH: Simpan path model, bukan index integer.
-            // Anda perlu menyesuaikan ViewModel Anda untuk menyimpan String.
-//             viewModel.setModelPath(objectDetectorHelper.modelPath)
             viewModel.setDelegate(objectDetectorHelper.currentDelegate)
             viewModel.setThreshold(objectDetectorHelper.threshold)
             viewModel.setMaxResults(objectDetectorHelper.maxResults)
@@ -107,11 +104,11 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         }
     }
 
+    // Cleans up the view binding and shuts down the background executor.
     override fun onDestroyView() {
         _fragmentCameraBinding = null
         super.onDestroyView()
 
-        // Shut down our background executor.
         backgroundExecutor.shutdown()
         backgroundExecutor.awaitTermination(
             Long.MAX_VALUE,
@@ -119,6 +116,7 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         )
     }
 
+    // Inflates the fragment's view and initializes the view binding.
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -130,11 +128,10 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         return fragmentCameraBinding.root
     }
 
+    // Sets up the swipe-to-refresh listener to sync models from the server.
     private fun setupPullToRefresh() {
-        // DIUBAH: Path ke swipeRefreshLayout sekarang langsung dari fragmentCameraBinding
         val swipeLayout = fragmentCameraBinding.swipeRefreshLayout
 
-        // Sisa dari fungsi ini tetap sama
         swipeLayout.setOnRefreshListener {
             Log.d(TAG, "Pull-to-refresh triggered.")
             Toast.makeText(context, "Syncing models...", Toast.LENGTH_SHORT).show()
@@ -145,7 +142,7 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
                         ModelManager.getModelFilePath(requireContext())
                     }
                     Toast.makeText(context, "Sync successful!", Toast.LENGTH_SHORT).show()
-//                    reloadModelsAndDetector()
+                    reloadModelsAndUpdateUI()
                 } catch (e: Exception) {
                     Toast.makeText(context, "Sync failed: ${e.message}", Toast.LENGTH_LONG).show()
                     Log.e(TAG, "Pull-to-refresh sync failed", e)
@@ -156,55 +153,45 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         }
     }
 
+    // Initializes the object detector, camera, and UI controls after the view is created.
     @SuppressLint("MissingPermission")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Initialize our background executor
         backgroundExecutor = Executors.newSingleThreadExecutor()
 
-        // Create the ObjectDetectionHelper that will handle the inference
         backgroundExecutor.execute {
-            // --- LOGIKA BARU DIMULAI DI SINI ---
-
-            // 1. Temukan semua model yang tersedia di penyimpanan internal
             val modelDir = File(requireContext().filesDir, "models")
             val modelFiles = modelDir.listFiles { _, name -> name.endsWith(".tflite") }
 
             if (modelFiles.isNullOrEmpty()) {
-                // Jika tidak ada model, tampilkan error di UI thread
                 activity?.runOnUiThread {
                     Toast.makeText(requireContext(), "Tidak ada model .tflite yang ditemukan.", Toast.LENGTH_LONG).show()
                 }
-                return@execute // Hentikan eksekusi jika tidak ada model
+                return@execute
             }
 
-            // Ambil daftar nama file untuk ditampilkan di Spinner
             val modelNames = modelFiles.map { it.name }
 
-            // Tentukan model awal yang akan di-load (misalnya, model pertama dalam daftar)
             initialModelPath = modelFiles.first().absolutePath
 
-            // --- LOGIKA BARU SELESAI ---
             objectDetectorHelper =
                 ObjectDetectorHelper(
                     context = requireContext(),
                     threshold = viewModel.currentThreshold,
                     currentDelegate = viewModel.currentDelegate,
-                    modelPath = initialModelPath, // Gunakan path model awal
+                    modelPath = initialModelPath,
                     maxResults = viewModel.currentMaxResults,
                     objectDetectorListener = this,
                     runningMode = RunningMode.LIVE_STREAM
                 )
 
-            // Setelah helper dibuat, setup kamera
             fragmentCameraBinding.viewFinder.post {
                 setUpCamera()
             }
 
-            // BARU: Panggil fungsi untuk mengisi Spinner di UI thread
             activity?.runOnUiThread {
-                populateModelSpinner(modelNames)
+                populateModelSpinner(modelNames, initialModelPath)
                 setupPullToRefresh()
             }
         }
@@ -214,37 +201,31 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
     }
 
 
-    // Letakkan fungsi ini di dalam class CameraFragment Anda
+    // Formats the model filename into a human-readable string for the spinner.
     private fun formatModelNameForDisplay(filename: String): String {
         return filename
-            // 1. Hapus timestamp di depan (semua sebelum underscore pertama)
             .substringAfter('_')
-            // 2. Hapus ekstensi .tflite
             .removeSuffix(".tflite")
-            // 3. Ganti underscore dengan spasi
             .replace('_', ' ')
-            // 4. Buat huruf pertama setiap kata menjadi kapital (opsional, tapi terlihat bagus)
             .split(' ')
             .joinToString(" ") { it.replaceFirstChar(Char::titlecase) }
     }
 
 
 
-    // BARU: Fungsi untuk mengisi data ke dalam Spinner
-    private fun populateModelSpinner(modelDisplayNames: List<String>) {
+    // Populates the model selection spinner with available models and sets the current selection.
+    private fun populateModelSpinner(modelDisplayNames: List<String>,  modelToSelectPath: String) {
         val modelDir = File(requireContext().filesDir, "models")
         if (!modelDir.exists()) {
             Log.e("ModelSetup", "Models directory does not exist.")
             return
         }
 
-        // Kosongkan map sebelum diisi ulang
         modelMap.clear()
 
-        // Ambil semua file .tflite, lalu isi map
         modelDir.listFiles { _, name -> name.endsWith(".tflite") }?.forEach { file ->
             val cleanName = formatModelNameForDisplay(file.name)
-            modelMap[cleanName] = file.name // Key: nama bagus, Value: nama file asli
+            modelMap[cleanName] = file.name
         }
 
         if (modelMap.isEmpty()) {
@@ -252,23 +233,20 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
             return
         }
 
-        // Ambil daftar nama yang sudah bersih untuk ditampilkan di Spinner
         val displayNames = modelMap.keys.toList()
 
-        // Buat adapter untuk Spinner menggunakan nama yang sudah bersih
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, displayNames)
         fragmentCameraBinding.bottomSheetLayout.spinnerModel.adapter = adapter
 
-        // Set pilihan spinner ke model yang sedang aktif
-        // (Anda bisa menyesuaikan logika ini jika perlu menyimpan pilihan terakhir)
-        val currentModelName = File(initialModelPath).name
+        val currentModelName = File(modelToSelectPath).name
         val currentDisplayName = formatModelNameForDisplay(currentModelName)
         val currentModelPosition = displayNames.indexOf(currentDisplayName)
         if (currentModelPosition != -1) {
-            fragmentCameraBinding.bottomSheetLayout.spinnerModel.setSelection(currentModelPosition)
+            fragmentCameraBinding.bottomSheetLayout.spinnerModel.setSelection(currentModelPosition, false)
         }
     }
 
+    // Initializes listeners for the UI controls in the bottom sheet, like the model spinner.
     private fun initBottomSheetControls() {
         fragmentCameraBinding.bottomSheetLayout.spinnerModel.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
@@ -278,34 +256,60 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
                     position: Int,
                     id: Long
                 ) {
-                    // 1. Ambil nama tampilan yang dipilih pengguna
                     val selectedDisplayName = parent?.getItemAtPosition(position).toString()
-
-                    // 2. Gunakan Map untuk mendapatkan nama file asli
                     val originalFileName = modelMap[selectedDisplayName] ?: return
-
-                    // 3. Buat path lengkap menggunakan nama file asli
                     val newModelPath = File(requireContext().filesDir, "models/$originalFileName").absolutePath
 
-                    // Ganti model hanya jika path-nya berbeda
                     if (this@CameraFragment::objectDetectorHelper.isInitialized && newModelPath != objectDetectorHelper.modelPath) {
+
+                        initialModelPath = newModelPath
+
                         backgroundExecutor.execute {
                             objectDetectorHelper.changeModel(newModelPath)
                         }
                     }
                 }
 
-
-                override fun onNothingSelected(p0: AdapterView<*>?) {
-                    /* tidak ada operasi */
-                }
+                override fun onNothingSelected(p0: AdapterView<*>?) { /* no operation */ }
             }
     }
 
-    // Perbarui UI dan reset object detector.
-    private fun updateControlsUi() {
-        // Baris untuk `maxResultsValue` dan `thresholdValue` dihapus karena elemennya tidak ada lagi.
+    // Reloads the list of models from storage, updates the UI spinner, and reinitializes the detector.
+    private fun reloadModelsAndUpdateUI() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val modelFiles = withContext(Dispatchers.IO) {
+                    val modelDir = File(requireContext().filesDir, "models")
+                    modelDir.listFiles { _, name -> name.endsWith(".tflite") } ?: emptyArray()
+                }
 
+                if (modelFiles.isEmpty()) {
+                    Toast.makeText(context, "Tidak ada model ditemukan setelah sync.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                initialModelPath = modelFiles.first().absolutePath
+
+                withContext(Dispatchers.Main) {
+                    populateModelSpinner(modelFiles.map { it.name }, initialModelPath)
+
+                    backgroundExecutor.execute {
+                        objectDetectorHelper.clearObjectDetector()
+                        objectDetectorHelper.modelPath = initialModelPath
+                        objectDetectorHelper.setupObjectDetector()
+                    }
+
+                    Toast.makeText(context, "UI updated with new model!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Gagal memuat ulang model setelah refresh", e)
+                Toast.makeText(context, "Gagal update UI: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // Resets the object detector and clears the overlay view.
+    private fun updateControlsUi() {
         backgroundExecutor.execute {
             objectDetectorHelper.clearObjectDetector()
             objectDetectorHelper.setupObjectDetector()
@@ -314,43 +318,36 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         fragmentCameraBinding.overlay.clear()
     }
 
-    // Inisialisasi CameraX dan siapkan untuk mengikat use case kamera
+    // Initializes CameraX and prepares it for binding camera use cases.
     private fun setUpCamera() {
         val cameraProviderFuture =
             ProcessCameraProvider.getInstance(requireContext())
         cameraProviderFuture.addListener(
             {
-                // CameraProvider
                 cameraProvider = cameraProviderFuture.get()
-
-                // Bangun dan ikat use case kamera
                 bindCameraUseCases()
             },
             ContextCompat.getMainExecutor(requireContext())
         )
     }
-    // Declare and bind preview, capture and analysis use cases
+
+    // Configures and binds the camera's preview and image analysis use cases.
     @SuppressLint("UnsafeOptInUsageError")
     private fun bindCameraUseCases() {
-
-        // CameraProvider
         val cameraProvider =
             cameraProvider
                 ?: throw IllegalStateException("Camera initialization failed.")
 
-        // CameraSelector - makes assumption that we're only using the back camera
         val cameraSelector =
             CameraSelector.Builder()
                 .requireLensFacing(CameraSelector.LENS_FACING_BACK).build()
 
-        // Preview. Only using the 4:3 ratio because this is the closest to our models
         preview =
             Preview.Builder()
                 .setTargetAspectRatio(AspectRatio.RATIO_4_3)
                 .setTargetRotation(fragmentCameraBinding.viewFinder.display.rotation)
                 .build()
 
-        // ImageAnalysis. Using RGBA 8888 to match how our models work
         imageAnalyzer =
             ImageAnalysis.Builder()
                 .setTargetAspectRatio(AspectRatio.RATIO_4_3)
@@ -358,7 +355,6 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(OUTPUT_IMAGE_FORMAT_RGBA_8888)
                 .build()
-                // The analyzer can then be assigned to the instance
                 .also {
                     it.setAnalyzer(
                         backgroundExecutor,
@@ -366,12 +362,9 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
                     )
                 }
 
-        // Must unbind the use-cases before rebinding them
         cameraProvider.unbindAll()
 
         try {
-            // A variable number of use-cases can be passed here -
-            // camera provides access to CameraControl & CameraInfo
             camera = cameraProvider.bindToLifecycle(
                 this,
                 cameraSelector,
@@ -379,53 +372,54 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
                 imageAnalyzer
             )
 
-            // Attach the viewfinder's surface provider to preview use case
             preview?.setSurfaceProvider(fragmentCameraBinding.viewFinder.surfaceProvider)
         } catch (exc: Exception) {
             Log.e(TAG, "Use case binding failed", exc)
         }
     }
 
+    // Handles configuration changes, such as screen rotation, to update the image analyzer.
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         imageAnalyzer?.targetRotation =
             fragmentCameraBinding.viewFinder.display.rotation
     }
 
-    // Update UI setelah objek terdeteksi.
+    // A callback to receive and display the detection results from the ObjectDetectorHelper.
     override fun onResults(resultBundle: ObjectDetectorHelper.ResultBundle) {
         activity?.runOnUiThread {
-            if (_fragmentCameraBinding != null) {
-                // ... (baris yang dikomentari tetap sama) ...
+            if (_fragmentCameraBinding != null && isAdded) {
+                Log.d(TAG, "onResults dipanggil dengan ${resultBundle.results.size} hasil.")
 
-                // Teruskan informasi yang diperlukan ke OverlayView untuk menggambar di kanvas
-                val detectionResult = resultBundle.results[0]
-                if (isAdded) {
-                    fragmentCameraBinding.overlay.setResults(
-                        detectionResult,
-                        resultBundle.inputImageHeight,
-                        // INI YANG DIPERBAIKI: 'result' menjadi 'resultBundle'
-                        resultBundle.inputImageWidth,
-                        resultBundle.inputImageRotation
-                    )
+                if (resultBundle.results.isNotEmpty()) {
+                    val detectionResult = resultBundle.results[0]
+
+                    if (detectionResult.detections().isNotEmpty()) {
+                        Log.d(TAG, "Objek terdeteksi: ${detectionResult.detections().size} buah.")
+                        fragmentCameraBinding.overlay.setResults(
+                            detectionResult,
+                            resultBundle.inputImageHeight,
+                            resultBundle.inputImageWidth,
+                            resultBundle.inputImageRotation
+                        )
+                    } else {
+                        Log.d(TAG, "Hasil ada, tapi tidak ada objek terdeteksi (detections list is empty).")
+                        fragmentCameraBinding.overlay.clear()
+                    }
+                } else {
+                    Log.d(TAG, "Daftar hasil utama kosong (results list is empty).")
+                    fragmentCameraBinding.overlay.clear()
                 }
 
-                // Paksa untuk menggambar ulang
                 fragmentCameraBinding.overlay.invalidate()
             }
         }
     }
 
+    // A callback to handle and display errors from the ObjectDetectorHelper.
     override fun onError(error: String, errorCode: Int) {
         activity?.runOnUiThread {
             Toast.makeText(requireContext(), error, Toast.LENGTH_SHORT).show()
-
-            // Blok if ini dihapus karena spinnerDelegate sudah tidak ada lagi di layout XML Anda
-            // if (errorCode == ObjectDetectorHelper.GPU_ERROR) {
-            //     fragmentCameraBinding.bottomSheetLayout.spinnerDelegate.setSelection(
-            //         ObjectDetectorHelper.DELEGATE_CPU, false
-            //     )
-            // }
         }
     }
 }
