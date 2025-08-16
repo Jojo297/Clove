@@ -20,6 +20,8 @@ apply plugin: 'kotlin-kapt'
 apply plugin: "androidx.navigation.safeargs"
 apply plugin: 'de.undercouch.download'
 
+def modelsApiKey = project.findProperty('MODELS_API_KEY') ?: ""
+
 android {
     compileSdkVersion 33
     defaultConfig {
@@ -29,6 +31,8 @@ android {
         targetSdkVersion 33
         versionCode 1
         versionName "1.0.0"
+
+        buildConfigField "String", "MODELS_API_KEY", "\"${modelsApiKey}\""
 
     }
 

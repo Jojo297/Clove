@@ -4,7 +4,7 @@
 *.iml
 .gradle/
 local.properties
-
+gradle.properties
 # IDE & logs
 .idea/
 *.log

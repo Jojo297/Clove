@@ -13,12 +13,15 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import com.google.mediapipe.examples.objectdetection.BuildConfig
 
 
 object ModelManager {
     private const val TAG = "ModelManager"
     private const val MODEL_DIR = "models"
-    private const val API_URL = "https://pegasus-accepted-surely.ngrok-free.app/api/models-all"
+
+    private const val API_LIST_URL = "https://pegasus-accepted-surely.ngrok-free.app/api/models-all"
+    private const val API_DOWNLOAD_BASE_URL = "https://pegasus-accepted-surely.ngrok-free.app/api/models/download/"
 
     /**
      * Sync all models from API to local storage, then return the main model path.
@@ -28,13 +31,12 @@ object ModelManager {
         if (!modelDir.exists()) modelDir.mkdirs()
 
         try {
-            val modelUrls = fetchAllModelUrls(API_URL)
-            if (modelUrls.isEmpty()) {
+            val modelPaths = fetchAllModelPaths(API_LIST_URL)
+            if (modelPaths.isEmpty()) {
                 throw Exception("Tidak ada model yang ditemukan dari API.")
             }
 
-            val remoteFileNames = modelUrls.map { it.substringAfterLast("/") }.toSet()
-
+            val remoteFileNames = modelPaths.map { it.substringAfterLast("/") }.toSet()
             val localFiles = modelDir.listFiles() ?: emptyArray()
 
             localFiles.forEach { localFile ->
@@ -44,13 +46,13 @@ object ModelManager {
                 }
             }
 
-            for (modelUrl in modelUrls) {
-                val fileName = modelUrl.substringAfterLast("/")
+            for (fileName in remoteFileNames) {
                 val localFile = File(modelDir, fileName)
-
                 if (!localFile.exists()) {
                     Log.i(TAG, "📥 Model belum ada, download: $fileName")
-                    downloadFile(modelUrl, localFile)
+                    // PERUBAHAN UTAMA: Buat URL unduhan yang aman
+                    val downloadUrl = "$API_DOWNLOAD_BASE_URL$fileName"
+                    downloadFile(downloadUrl, localFile)
                     Log.i(TAG, "✅ Model berhasil di-download: ${localFile.absolutePath}")
                 } else {
                     Log.i(TAG, "ℹ️ Model sudah ada, lewati: $fileName")
@@ -59,7 +61,7 @@ object ModelManager {
 
             listFilesInModelDir(context)
 
-            val firstModelFileName = modelUrls.first().substringAfterLast("/")
+            val firstModelFileName = remoteFileNames.first()
             return File(modelDir, firstModelFileName).absolutePath
 
         } catch (e: Exception) {
@@ -69,11 +71,12 @@ object ModelManager {
     }
 
     /**
-     * Retrieving ALL model URLs from JSON API response.
+     * Retrieving ALL model paths from JSON API response, now with API Key.
      */
-    private suspend fun fetchAllModelUrls(apiUrl: String): List<String> = withContext(Dispatchers.IO) {
+    private suspend fun fetchAllModelPaths(apiUrl: String): List<String> = withContext(Dispatchers.IO) {
         val conn = URL(apiUrl).openConnection() as HttpURLConnection
         conn.requestMethod = "GET"
+        conn.setRequestProperty("X-API-KEY", BuildConfig.MODELS_API_KEY)
 
         if (conn.responseCode != 200) {
             throw IOException("HTTP error code: ${conn.responseCode}")
@@ -83,19 +86,27 @@ object ModelManager {
         Log.i(TAG, "📦 Response JSON: $response")
 
         val jsonArray = JSONArray(response)
-        val urls = mutableListOf<String>()
+        val paths = mutableListOf<String>()
         for (i in 0 until jsonArray.length()) {
             val obj = jsonArray.getJSONObject(i)
-            urls.add(obj.getString("path"))
+            paths.add(obj.getString("path"))
         }
-        return@withContext urls
+        return@withContext paths
     }
 
     /**
-     * Download model file from URL and save to the local storage.
+     * Download model file from a secure URL and save to the local storage, now with API Key.
      */
     private suspend fun downloadFile(urlString: String, localFile: File) = withContext(Dispatchers.IO) {
-        URL(urlString).openStream().use { input ->
+        val conn = URL(urlString).openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.setRequestProperty("X-API-KEY", BuildConfig.MODELS_API_KEY)
+
+        if (conn.responseCode != 200) {
+            throw IOException("Download failed with HTTP error code: ${conn.responseCode}")
+        }
+
+        conn.inputStream.use { input ->
             FileOutputStream(localFile).use { output ->
                 input.copyTo(output)
             }
