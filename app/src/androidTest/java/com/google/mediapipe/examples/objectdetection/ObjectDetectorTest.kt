@@ -83,9 +83,11 @@ class ObjectDetectorTest {
     @Test
     fun detectionResultsFromLiveStreamModeFallsWithinAcceptedRange() {
         var detectionResult: ObjectDetectorResult? = null
+        val modelPath = "efficientdet_lite0.tflite"
         val objectDetectorHelper = ObjectDetectorHelper(
             context = ApplicationProvider.getApplicationContext(),
             runningMode = RunningMode.LIVE_STREAM,
+            modelPath = modelPath,
             objectDetectorListener =
             object : ObjectDetectorHelper.DetectorListener {
                 override fun onError(error: String, errorCode: Int) {
@@ -146,9 +148,12 @@ class ObjectDetectorTest {
      */
     @Test
     fun detectionResultsFromVideoModeFallsWithinAcceptedRange() {
+        val modelPath = "efficientdet_lite0.tflite"
+
         val objectDetectorHelper = ObjectDetectorHelper(
             context = ApplicationProvider.getApplicationContext(),
-            runningMode = RunningMode.VIDEO
+            runningMode = RunningMode.VIDEO,
+            modelPath = modelPath
         )
 
         val videoUri = getVideoUri(TEST_VIDEO_NAME)
@@ -205,9 +210,12 @@ class ObjectDetectorTest {
      */
     @Test
     fun detectionResultsFromImageModeFallsWithinAcceptedRange() {
+        val modelPath = "efficientdet_lite0.tflite"
+
         val objectDetectorHelper = ObjectDetectorHelper(
             context = ApplicationProvider.getApplicationContext(),
-            runningMode = RunningMode.IMAGE
+            runningMode = RunningMode.IMAGE,
+            modelPath = modelPath
         )
 
         val bitmap = loadImage(TEST_IMAGE_NAME)

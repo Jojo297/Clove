@@ -38,6 +38,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.Navigation
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.mediapipe.examples.objectdetection.MainViewModel
 import com.google.mediapipe.examples.objectdetection.ObjectDetectorHelper
 import com.google.mediapipe.examples.objectdetection.R
@@ -47,6 +48,8 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.FileOutputStream
+import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -69,7 +72,6 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
     private var initialModelPath: String = ""
     private val modelMap = mutableMapOf<String, String>()
 
-
     /** Blocking ML operations are performed using this executor */
     private lateinit var backgroundExecutor: ExecutorService
 
@@ -80,27 +82,20 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
             Navigation.findNavController(
                 requireActivity(),
                 R.id.fragment_container
-            )
-                .navigate(CameraFragmentDirections.actionCameraToPermissions())
-        }
-
-        backgroundExecutor.execute {
-            if (objectDetectorHelper.isClosed()) {
-                objectDetectorHelper.setupObjectDetector()
-            }
+            ).navigate(CameraFragmentDirections.actionCameraToPermissions())
         }
     }
 
     // Pauses the detection and releases detector resources to save power.
     override fun onPause() {
         super.onPause()
-
-        if(this::objectDetectorHelper.isInitialized) {
+        if (this::objectDetectorHelper.isInitialized) {
             viewModel.setDelegate(objectDetectorHelper.currentDelegate)
             viewModel.setThreshold(objectDetectorHelper.threshold)
             viewModel.setMaxResults(objectDetectorHelper.maxResults)
 
-            backgroundExecutor.execute { objectDetectorHelper.clearObjectDetector() }
+            // Panggil clearObjectDetector() langsung, itu sudah thread-safe.
+            objectDetectorHelper.clearObjectDetector()
         }
     }
 
@@ -128,28 +123,42 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         return fragmentCameraBinding.root
     }
 
-    // Sets up the swipe-to-refresh listener to sync models from the server.
-    private fun setupPullToRefresh() {
-        val swipeLayout = fragmentCameraBinding.swipeRefreshLayout
+    // Sebuah fungsi untuk menampung logika sinkronisasi
+    private fun syncModels() {
+        // Akses tombol dan ProgressBar
+        val syncButton = fragmentCameraBinding.bottomSheetLayout.syncButton
+        // Asumsi sync_progress_bar berada di dalam included layout
 
-        swipeLayout.setOnRefreshListener {
-            Log.d(TAG, "Pull-to-refresh triggered.")
-            Toast.makeText(context, "Syncing models...", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Sync button triggered.")
+        Toast.makeText(context, "Syncing models...", Toast.LENGTH_SHORT).show()
 
-            viewLifecycleOwner.lifecycleScope.launch {
-                try {
-                    withContext(Dispatchers.IO) {
-                        ModelManager.getModelFilePath(requireContext())
-                    }
-                    Toast.makeText(context, "Sync successful!", Toast.LENGTH_SHORT).show()
-                    reloadModelsAndUpdateUI()
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Sync failed: ${e.message}", Toast.LENGTH_LONG).show()
-                    Log.e(TAG, "Pull-to-refresh sync failed", e)
-                } finally {
-                    swipeLayout.isRefreshing = false
+        // START LOADING STATE
+        syncButton.isEnabled = false
+        syncButton.text = "Loading.."
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    ModelManager.getModelFilePath(requireContext())
                 }
+                Toast.makeText(context, "Sync successful!", Toast.LENGTH_SHORT).show()
+                reloadModelsAndUpdateUI()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Sync failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Log.e(TAG, "Sync failed", e)
+            } finally {
+                // END LOADING STATE (Always execute)
+                syncButton.text = "Sync Models" // Kembalikan teks tombol
+                syncButton.isEnabled = true // Aktifkan kembali tombol
             }
+        }
+    }
+
+    private fun setupSyncButton() {
+        val syncButton = fragmentCameraBinding.bottomSheetLayout.syncButton // Asumsi Anda menggunakan ViewBinding atau findViewById
+
+        syncButton.setOnClickListener {
+            syncModels()
         }
     }
 
@@ -160,46 +169,68 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
 
         backgroundExecutor = Executors.newSingleThreadExecutor()
 
-        backgroundExecutor.execute {
-            val modelDir = File(requireContext().filesDir, "models")
-            val modelFiles = modelDir.listFiles { _, name -> name.endsWith(".tflite") }
-
-            if (modelFiles.isNullOrEmpty()) {
-                activity?.runOnUiThread {
-                    Toast.makeText(requireContext(), "Tidak ada model .tflite yang ditemukan.", Toast.LENGTH_LONG).show()
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
+            try {
+                // Panggil fungsi inisialisasi yang aman
+                withContext(Dispatchers.IO) {
+                    initializeDetectorAndCamera()
                 }
-                return@execute
-            }
-
-            val modelNames = modelFiles.map { it.name }
-
-            initialModelPath = modelFiles.first().absolutePath
-
-            objectDetectorHelper =
-                ObjectDetectorHelper(
-                    context = requireContext(),
-                    threshold = viewModel.currentThreshold,
-                    currentDelegate = viewModel.currentDelegate,
-                    modelPath = initialModelPath,
-                    maxResults = viewModel.currentMaxResults,
-                    objectDetectorListener = this,
-                    runningMode = RunningMode.LIVE_STREAM
-                )
-
-            fragmentCameraBinding.viewFinder.post {
-                setUpCamera()
-            }
-
-            activity?.runOnUiThread {
-                populateModelSpinner(modelNames, initialModelPath)
-                setupPullToRefresh()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize detector", e)
+                Toast.makeText(requireContext(), "Gagal memuat: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
         initBottomSheetControls()
-
         fragmentCameraBinding.overlay.setRunningMode(RunningMode.LIVE_STREAM)
+
+        // Pengecekan Awal Orientasi Saat Fragment dibuat
+//        val (bottomNav, toolbar) = getParentUIViews()
+//        val orientation = resources.configuration.orientation
+//
+//        if (bottomNav != null && toolbar != null) {
+//            if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+//                bottomNav.visibility = View.GONE
+//                toolbar.visibility = View.GONE
+//            } else {
+//                // Pastikan visibilitas default jika bukan landscape
+//                bottomNav.visibility = View.VISIBLE
+//                toolbar.visibility = View.VISIBLE
+//            }
+//        }
+
+        // change rotation
+//        val bottomNavigationView = requireActivity().findViewById<BottomNavigationView>(R.id.navigation) // Ganti ID jika berbeda
+//        val toolbarView = requireActivity().findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar) // Ganti ID jika berbeda
+
+        // Listener untuk mendeteksi perubahan layout, termasuk rotasi
+//        view.viewTreeObserver.addOnGlobalLayoutListener {
+//            context?.let { safeContext ->
+//                val orientation = safeContext.resources.configuration.orientation
+//
+//                // Hanya jika views ditemukan
+//                if (bottomNavigationView != null && toolbarView != null) {
+//                    if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+//                        bottomNavigationView.visibility = View.GONE
+//                        toolbarView.visibility = View.GONE
+//                    } else {
+//                        bottomNavigationView.visibility = View.VISIBLE
+//                        toolbarView.visibility = View.VISIBLE
+//                    }
+//                }
+//            }
+//        }
     }
 
+    private fun getParentUIViews(): Pair<View?, View?> {
+        val activity = requireActivity()
+
+        // Gunakan tipe View yang benar (Misal: BottomNavigationView dan Toolbar)
+        val bottomNav = activity.findViewById<BottomNavigationView>(R.id.navigation)
+        val toolbar = activity.findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+
+        // Kita mengembalikan View? dan View? karena kita hanya butuh View untuk visibility
+        return Pair(bottomNav, toolbar)
+    }
 
     // Formats the model filename into a human-readable string for the spinner.
     private fun formatModelNameForDisplay(filename: String): String {
@@ -211,6 +242,76 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
             .joinToString(" ") { it.replaceFirstChar(Char::titlecase) }
     }
 
+    private suspend fun initializeDetectorAndCamera() {
+        val modelDir = File(requireContext().filesDir, "models")
+        val defaultModelFileName = "efficientdet-lite0.tflite"
+
+        // Pastikan folder models ada
+        if (!modelDir.exists()) {
+            modelDir.mkdirs()
+        }
+
+        // Salin model dari assets jika tidak ada model di penyimpanan lokal
+        val localFiles = modelDir.listFiles { _, name -> name.endsWith(".tflite") }
+        if (localFiles.isNullOrEmpty()) {
+            copyModelFromAssets(defaultModelFileName)
+        }
+
+        // Ambil path model yang akan digunakan
+        val modelFile = modelDir.listFiles { _, name -> name.endsWith(".tflite") }?.firstOrNull()
+        if (modelFile == null) {
+            throw IllegalStateException("Tidak ada model ditemukan setelah menyalin dari assets.")
+        }
+
+        initialModelPath = modelFile.absolutePath
+
+        // Inisialisasi objectDetectorHelper
+        objectDetectorHelper = ObjectDetectorHelper(
+            context = requireContext(),
+            threshold = viewModel.currentThreshold,
+            currentDelegate = viewModel.currentDelegate,
+            modelPath = initialModelPath,
+            maxResults = viewModel.currentMaxResults,
+            objectDetectorListener = this,
+            runningMode = RunningMode.LIVE_STREAM
+        )
+
+        // Logika UI harus di main thread
+        withContext(Dispatchers.Main) {
+            fragmentCameraBinding.viewFinder.post {
+                setUpCamera()
+            }
+            val modelFiles = modelDir.listFiles { _, name -> name.endsWith(".tflite") }?.map { it.name } ?: emptyList()
+            populateModelSpinner(modelFiles, initialModelPath)
+//            setupPullToRefresh()
+            setupSyncButton()
+        }
+    }
+
+    private suspend fun copyModelFromAssets(fileName: String) {
+        val assetManager = requireContext().assets
+        val outputDir = File(requireContext().filesDir, "models")
+        if (!outputDir.exists()) {
+            outputDir.mkdirs()
+        }
+        val outputFile = File(outputDir, fileName)
+
+        if (!outputFile.exists()) {
+            withContext(Dispatchers.IO) {
+                try {
+                    assetManager.open(fileName).use { inputStream ->
+                        FileOutputStream(outputFile).use { outputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                    Log.i(TAG, "✅ Model '$fileName' berhasil disalin dari assets.")
+                } catch (e: IOException) {
+                    Log.e(TAG, "❌ Gagal menyalin model dari assets: ${e.message}", e)
+                    throw e
+                }
+            }
+        }
+    }
 
 
     // Populates the model selection spinner with available models and sets the current selection.
@@ -383,6 +484,25 @@ class CameraFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         super.onConfigurationChanged(newConfig)
         imageAnalyzer?.targetRotation =
             fragmentCameraBinding.viewFinder.display.rotation
+
+        try {
+            val (bottomNav, toolbar) = getParentUIViews()
+
+            if (bottomNav != null && toolbar != null) {
+                if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                    bottomNav.visibility = View.GONE
+                    toolbar.visibility = View.GONE
+                } else if (newConfig.orientation == Configuration.ORIENTATION_PORTRAIT) {
+                    bottomNav.visibility = View.VISIBLE
+                    toolbar.visibility = View.VISIBLE
+                }
+            } else {
+                Log.e(TAG, "FATAL: BottomNav atau Toolbar TIDAK DITEMUKAN di Activity!")
+            }
+        } catch (e: Exception) {
+            // Ini akan menangkap ClassCastException atau NullPointerException lainnya.
+            Log.e(TAG, "CRASH saat rotasi UI!", e)
+        }
     }
 
     // A callback to receive and display the detection results from the ObjectDetectorHelper.

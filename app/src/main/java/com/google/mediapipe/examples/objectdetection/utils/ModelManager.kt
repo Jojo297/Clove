@@ -2,6 +2,7 @@ package com.google.mediapipe.examples.objectdetection.utils
 
 import android.content.Context
 import android.util.Log
+import androidx.core.content.ContentProviderCompat.requireContext
 import com.jiangdg.utils.FileUtils
 
 import kotlinx.coroutines.Dispatchers
@@ -20,8 +21,8 @@ object ModelManager {
     private const val TAG = "ModelManager"
     private const val MODEL_DIR = "models"
 
-    private const val API_LIST_URL = "https://pegasus-accepted-surely.ngrok-free.app/api/models-all"
-    private const val API_DOWNLOAD_BASE_URL = "https://pegasus-accepted-surely.ngrok-free.app/api/models/download/"
+    private const val API_LIST_URL = "https://fruitdetect.id/api/models-all"
+    private const val API_DOWNLOAD_BASE_URL = "https://fruitdetect.id/api/models/download/"
 
     /**
      * Sync all models from API to local storage, then return the main model path.
@@ -70,6 +71,8 @@ object ModelManager {
         }
     }
 
+
+
     /**
      * Retrieving ALL model paths from JSON API response, now with API Key.
      */
@@ -112,7 +115,6 @@ object ModelManager {
             }
         }
     }
-
     /**
      * Copy the model from the assets folder as a fallback..
      */
