@@ -4,24 +4,17 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.hardware.usb.UsbDevice
 import android.os.Bundle
-import android.provider.MediaStore.Images.Media.getBitmap
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
-import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import android.widget.FrameLayout
 import android.widget.Toast
-import android.widget.Toolbar
-import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.coordinatorlayout.widget.CoordinatorLayout
-import androidx.core.content.ContentProviderCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -29,17 +22,12 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.mediapipe.examples.objectdetection.MainViewModel
 import com.google.mediapipe.examples.objectdetection.ObjectDetectorHelper
-import com.google.mediapipe.examples.objectdetection.OverlayView
+import com.google.mediapipe.examples.objectdetection.OverlayViewWebcam
 import com.google.mediapipe.examples.objectdetection.R
 import com.google.mediapipe.examples.objectdetection.databinding.FragmentWebcamBinding
 import com.google.mediapipe.examples.objectdetection.utils.ModelManager
 import com.google.mediapipe.tasks.vision.core.RunningMode
-import com.jiangdg.ausbc.MultiCameraClient
-import com.jiangdg.ausbc.callback.ICameraStateCallBack
-import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
-import com.jiangdg.ausbc.utils.ToastUtils.show
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
-import com.jiangdg.ausbc.widget.IAspectRatio
 import com.jiangdg.usb.USBMonitor
 import com.jiangdg.uvc.UVCCamera
 import kotlinx.coroutines.Dispatchers
@@ -51,9 +39,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 
 class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
@@ -66,7 +51,7 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
     private lateinit var mUSBMonitor: USBMonitor
     private var mUVCCamera: UVCCamera? = null
 
-    private lateinit var overlay: OverlayView
+    private lateinit var overlay: OverlayViewWebcam
     private lateinit var objectDetectorHelper: ObjectDetectorHelper
     private val viewModel: MainViewModel by activityViewModels()
     private var initialModelPath: String = ""
@@ -89,7 +74,6 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
     override fun onResume() {
         super.onResume()
         if (!PermissionsFragment.hasPermissions(requireContext())) {
-            // Navigate to permissions fragment
         }
     }
 
@@ -153,7 +137,6 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
                 val modelFile = modelDir.listFiles { _, name -> name.endsWith(".tflite") }?.firstOrNull()
                 initialModelPath = modelFile?.absolutePath ?: throw IllegalStateException("Tidak ada model ditemukan setelah copy.")
 
-                // Inisialisasi helper hanya setelah model dipastikan ada
                 objectDetectorHelper =
                     withContext(Dispatchers.IO) {
                         ObjectDetectorHelper(
@@ -221,9 +204,10 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         val bottomNavigationView = requireActivity().findViewById<BottomNavigationView>(R.id.navigation)
         val toolbarView = requireActivity().findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
 
+        // Manage rotation
         view.viewTreeObserver.addOnGlobalLayoutListener {
             context?.let { safeContext ->
-                val orientation = context?.resources?.configuration?.orientation
+                val orientation = safeContext.resources.configuration.orientation
                 val displayMetrics = resources.displayMetrics
 
                 val cameraContainer = fragmentWebcamBinding.webcamContainer
@@ -231,12 +215,12 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
                 val overlayView = fragmentWebcamBinding.overlay
 
                 val params = cameraContainer.layoutParams as CoordinatorLayout.LayoutParams
+
+                // if rotation landscape
                 if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
                     val targetWidth = (displayMetrics.widthPixels * 0.8).toInt()
                     val targetHeight = (targetWidth * DEFAULT_PREVIEW_HEIGHT / DEFAULT_PREVIEW_WIDTH)
-
                     val offsetLeft = (displayMetrics.widthPixels - targetWidth) / 2
-
 
                     params.width = targetWidth
                     params.height = targetHeight
@@ -246,22 +230,29 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
                     textureView.setAspectRatio(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
 
                     overlayView.setPreviewLayout(
-                        offsetLeft, // Hitungan offset horizontal
-                        0,          // Offset vertikal diabaikan karena kamera mengisi match_parent secara vertikal
+                        offsetLeft,
+                        0,
                         targetWidth,
                         targetHeight
                     )
 
+                    // bottom nav and navabar hidden
                     bottomNavigationView.visibility = View.GONE
                     toolbarView.visibility = View.GONE
+
                 } else {
-                    params.width = ViewGroup.LayoutParams.MATCH_PARENT
-                    params.height = ViewGroup.LayoutParams.MATCH_PARENT
+                    // if rotation potrait
+                    val targetWidth = displayMetrics.widthPixels
+                    val targetHeight = (targetWidth * 3) / 4
+
+                    params.width = targetWidth
+                    params.height = targetHeight
+                    params.gravity = Gravity.CENTER_VERTICAL
 
                     cameraContainer.layoutParams = params
                     textureView.setAspectRatio(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
 
-                    overlayView.setPreviewLayout(0, 0, displayMetrics.widthPixels, displayMetrics.heightPixels)
+                    overlayView.setPreviewLayout(0, 0, targetWidth, targetHeight)
 
                     bottomNavigationView.visibility = View.VISIBLE
                     toolbarView.visibility = View.VISIBLE
@@ -317,16 +308,14 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
             .joinToString(" ") { it.replaceFirstChar(Char::titlecase) }
     }
 
-    // Sebuah fungsi untuk menampung logika sinkronisasi
+    // Sync models from server
     private fun syncModels() {
-        // Akses tombol dan ProgressBar
         val syncButton = fragmentWebcamBinding.bottomSheetLayout.syncButton
-        // Asumsi sync_progress_bar berada di dalam included layout
 
         Log.d(TAG, "Sync button triggered.")
         Toast.makeText(context, "Syncing models...", Toast.LENGTH_SHORT).show()
 
-        // START LOADING STATE
+        // loading
         syncButton.isEnabled = false
         syncButton.text = "Loading.."
 
@@ -341,13 +330,14 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
                 Toast.makeText(context, "Sync failed: ${e.message}", Toast.LENGTH_LONG).show()
                 Log.e(TAG, "Sync failed", e)
             } finally {
-                // END LOADING STATE (Always execute)
+                // end loading state
                 syncButton.text = "Sync Models"
                 syncButton.isEnabled = true
             }
         }
     }
 
+    // button sync
     private fun setupSyncButton() {
         val syncButton = fragmentWebcamBinding.bottomSheetLayout.syncButton // Asumsi Anda menggunakan ViewBinding atau findViewById
 
@@ -415,17 +405,20 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
             else -> 0
         }
     }
+
     override fun onResults(resultBundle: ObjectDetectorHelper.ResultBundle) {
         activity?.runOnUiThread {
             if (isAdded) {
                 val detectionResult = resultBundle.results.firstOrNull()
                 if (detectionResult != null && detectionResult.detections().isNotEmpty()) {
+
                     fragmentWebcamBinding.overlay.setResults(
                         detectionResult,
-                        resultBundle.inputImageHeight,
-                        resultBundle.inputImageWidth,
+                        DEFAULT_PREVIEW_HEIGHT,
+                        DEFAULT_PREVIEW_WIDTH,
                         resultBundle.inputImageRotation
                     )
+
                 } else {
                     fragmentWebcamBinding.overlay.clear()
                 }
@@ -478,20 +471,31 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
         }
     }
 
+    private fun cropBitmapToSquare(bitmap: Bitmap): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        val newDimension = minOf(width, height)
+
+        val x = (width - newDimension) / 2
+        val y = (height - newDimension) / 2
+
+        return Bitmap.createBitmap(bitmap, x, y, newDimension, newDimension)
+    }
+
     private fun detectFromWebcam() {
+        if (!isAdded || mUVCCameraView.bitmap == null) return
 
-        if (!isAdded) return
+        try {
+            val frameBitmap = mUVCCameraView.getBitmap() ?: return
 
-        val bitmap = try {
-            mUVCCameraView.getBitmap()?.let { frame ->
-                Bitmap.createScaledBitmap(frame, 384, 384, true)
-            }
+            val croppedBitmap = cropBitmapToSquare(frameBitmap)
+
+            val modelInputBitmap = Bitmap.createScaledBitmap(croppedBitmap, 384, 384, true)
+
+            objectDetectorHelper.detectFromBitmap(modelInputBitmap, getDeviceRotation())
+
         } catch (e: Exception) {
             Log.e(TAG, "Error in detectFromWebcam: ${e.message}", e)
-            null
-        }
-        bitmap?.let {
-            objectDetectorHelper.detectFromBitmap(it, getDeviceRotation())
         }
     }
 }

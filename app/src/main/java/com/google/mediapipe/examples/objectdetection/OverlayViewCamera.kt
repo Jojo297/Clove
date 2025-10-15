@@ -26,7 +26,7 @@ import com.google.mediapipe.tasks.vision.objectdetector.ObjectDetectorResult
 import kotlin.math.max
 import kotlin.math.min
 
-class OverlayView(context: Context?, attrs: AttributeSet?) :
+class OverlayViewCamera(context: Context?, attrs: AttributeSet?) :
     View(context, attrs) {
 
     private var results: ObjectDetectorResult? = null
