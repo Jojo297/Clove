@@ -2,7 +2,6 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://jitpack.io' }
         maven { url 'https://maven.aliyun.com/repository/public/' }
     }
 }
@@ -13,9 +12,15 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url 'https://jitpack.io' }
-        maven { url 'https://maven.aliyun.com/repository/public/' }
     }
 }
 
 include ':app'
-include ':libuvccamera'
+
+include ':libausbc'
+include ':libuvc'
+include ':libnative'
+
+project(':libausbc').projectDir = file('AndroidUSBCamera/libausbc')
+project(':libuvc').projectDir = file('AndroidUSBCamera/libuvc')
+project(':libnative').projectDir = file('AndroidUSBCamera/libnative')

@@ -23,7 +23,7 @@ apply plugin: 'de.undercouch.download'
 def modelsApiKey = project.findProperty('MODELS_API_KEY') ?: ""
 
 android {
-    compileSdkVersion 33
+    compileSdkVersion 34
     defaultConfig {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         applicationId "com.google.mediapipe.examples.objectdetection"
@@ -131,10 +131,8 @@ dependencies {
     // MJPEG Viewer
     implementation 'com.perthcpe23.dev:android-mjpeg-view:1.1.2'
 
-    // USB Webcam
-    implementation 'com.github.jiangdongguo:AndroidUSBCamera:3.3.3'
+    implementation project(':libausbc')
 
-    // swipe refresh
     implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.2.0-alpha01"
 
 

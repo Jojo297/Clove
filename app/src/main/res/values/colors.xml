@@ -25,4 +25,5 @@
     <color name="icFocused">#DDFFFFFF</color>
     <color name="icPressed">#AAFFFFFF</color>
     <color name="background_nav">#aaa</color>
+    <color name="WHITE">#FFFFFF</color>
 </resources>

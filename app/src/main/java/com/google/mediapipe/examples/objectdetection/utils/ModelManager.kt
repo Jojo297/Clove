@@ -3,8 +3,6 @@ package com.google.mediapipe.examples.objectdetection.utils
 import android.content.Context
 import android.util.Log
 import androidx.core.content.ContentProviderCompat.requireContext
-import com.jiangdg.utils.FileUtils
-
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray

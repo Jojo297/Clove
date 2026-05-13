@@ -5,11 +5,12 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        maven { url 'https://repository.liferay.com/nexus/content/repositories/public/' }
         maven { url 'https://jitpack.io' }
         maven { url 'https://maven.aliyun.com/repository/public/' }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.9.1'
+        classpath 'com.android.tools.build:gradle:8.13.2'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
         classpath 'androidx.navigation:navigation-safe-args-gradle-plugin:2.4.1'
         classpath 'de.undercouch:gradle-download-task:4.1.2'

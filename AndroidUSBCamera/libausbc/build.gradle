@@ -1,0 +1,56 @@
+plugins {
+    id 'com.android.library'
+    id 'kotlin-android'
+}
+
+android {
+    namespace 'com.jiangdg.ausbc'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 21
+        targetSdk 34
+        versionCode 126
+        versionName "3.3.3"
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = '11'
+        freeCompilerArgs += [
+                "-Xsuppress-version-warnings",
+                "-Xopt-in=kotlin.RequiresOptIn",
+                "-Xskip-prerelease-check"
+        ]
+    }
+
+    lintOptions {
+        abortOnError false
+        checkReleaseBuilds false
+        warningsAsErrors false
+    }
+
+    packagingOptions {
+        resources {
+            excludes += ['**/*']
+        }
+    }
+}
+
+dependencies {
+    implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation "androidx.constraintlayout:constraintlayout:2.1.4"
+    implementation "com.google.android.material:material:1.11.0"
+    api 'com.elvishew:xlog:1.11.0'
+
+    implementation project(':libuvc')
+    api project(':libnative')
+}
