@@ -20,8 +20,10 @@ apply plugin: 'kotlin-kapt'
 apply plugin: "androidx.navigation.safeargs"
 apply plugin: 'de.undercouch.download'
 
+def modelsApiKey = project.findProperty('MODELS_API_KEY') ?: ""
+
 android {
-    compileSdkVersion 33
+    compileSdkVersion 34
     defaultConfig {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         applicationId "com.google.mediapipe.examples.objectdetection"
@@ -29,6 +31,8 @@ android {
         targetSdkVersion 33
         versionCode 1
         versionName "1.0.0"
+
+        buildConfigField "String", "MODELS_API_KEY", "\"${modelsApiKey}\""
 
     }
 
@@ -50,7 +54,7 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
 
-            debuggable false
+            debuggable true
             minifyEnabled false
         }
     }
@@ -127,7 +131,10 @@ dependencies {
     // MJPEG Viewer
     implementation 'com.perthcpe23.dev:android-mjpeg-view:1.1.2'
 
-    // USB Webcam
-    implementation 'com.github.jiangdongguo:AndroidUSBCamera:3.3.3'
+    implementation project(':libausbc')
+
+    implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.2.0-alpha01"
+
+
 
 }

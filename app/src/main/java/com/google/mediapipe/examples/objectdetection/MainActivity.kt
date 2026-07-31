@@ -25,6 +25,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.google.mediapipe.examples.objectdetection.databinding.ActivityMainBinding
+import com.google.mediapipe.examples.objectdetection.utils.ModelManager
+import com.google.mediapipe.examples.objectdetection.utils.ModelManager.getModelFilePath
+import com.google.mediapipe.tasks.vision.core.RunningMode
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Main entry point into our app. This app follows the single-activity pattern, and all
@@ -34,12 +40,16 @@ import com.google.mediapipe.examples.objectdetection.databinding.ActivityMainBin
 class MainActivity : AppCompatActivity() {
 
     private lateinit var activityMainBinding: ActivityMainBinding
+
     private val viewModel: MainViewModel by viewModels()
+    private lateinit var detectorHelper: ObjectDetectorHelper
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         activityMainBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(activityMainBinding.root)
+
 
         val navHostFragment =
             supportFragmentManager.findFragmentById(R.id.fragment_container) as NavHostFragment
@@ -48,6 +58,21 @@ class MainActivity : AppCompatActivity() {
         activityMainBinding.navigation.setOnNavigationItemReselectedListener {
             // ignore the reselection
         }
+
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                val modelPath = ModelManager.getModelFilePath(this@MainActivity)
+                Log.i("MODEL_MANAGER", "📂 Model siap di: $modelPath")
+                println("📂 Model siap di: $modelPath")
+
+            }catch (e: Exception) {
+                e.printStackTrace()
+                Log.e("MODEL_MANAGER", "❌ Gagal download model: ${e.message}")
+                println("❌ Gagal download model: ${e.message}")
+            }
+        }
+
+
     }
 
     override fun onBackPressed() {

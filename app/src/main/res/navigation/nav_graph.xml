@@ -17,7 +17,7 @@
 <navigation xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/webcam_fragment">
+    app:startDestination="@id/camera_fragment">
 
     <!-- Permissions Fragment -->
     <fragment
@@ -25,11 +25,11 @@
         android:name="com.google.mediapipe.examples.objectdetection.fragments.PermissionsFragment"
         android:label="PermissionsFragment">
 
-<!--        <action-->
-<!--            android:id="@+id/action_permissions_to_camera"-->
-<!--            app:destination="@id/camera_fragment"-->
-<!--            app:popUpTo="@id/permissions_fragment"-->
-<!--            app:popUpToInclusive="true" />-->
+        <action
+            android:id="@+id/action_permissions_to_camera"
+            app:destination="@id/camera_fragment"
+            app:popUpTo="@id/permissions_fragment"
+            app:popUpToInclusive="true" />
 
         <!-- New Action to StreamFragment -->
         <action
@@ -39,18 +39,18 @@
             app:popUpToInclusive="true" />
     </fragment>
 
-    <!-- Camera Fragment -->
-<!--    <fragment-->
-<!--        android:id="@+id/camera_fragment"-->
-<!--        android:name="com.google.mediapipe.examples.objectdetection.fragments.CameraFragment"-->
-<!--        android:label="CameraFragment">-->
+<!--     Camera Fragment -->
+    <fragment
+        android:id="@+id/camera_fragment"
+        android:name="com.google.mediapipe.examples.objectdetection.fragments.CameraFragment"
+        android:label="CameraFragment">
 
-<!--        <action-->
-<!--            android:id="@+id/action_camera_to_permissions"-->
-<!--            app:destination="@id/permissions_fragment"-->
-<!--            app:popUpTo="@id/camera_fragment"-->
-<!--            app:popUpToInclusive="true" />-->
-<!--    </fragment>-->
+        <action
+            android:id="@+id/action_camera_to_permissions"
+            app:destination="@id/permissions_fragment"
+            app:popUpTo="@id/camera_fragment"
+            app:popUpToInclusive="true" />
+    </fragment>
 
     <!-- Gallery Fragment -->
 <!--    <fragment-->

@@ -1,75 +1,173 @@
 package com.google.mediapipe.examples.objectdetection.fragments
 
+import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.hardware.usb.UsbDevice
 import android.os.Bundle
-import android.provider.MediaStore.Images.Media.getBitmap
 import android.util.Log
+import android.view.Gravity
 import android.view.LayoutInflater
-import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Toast
-import android.widget.Toolbar
-import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.content.ContextCompat
-import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.mediapipe.examples.objectdetection.MainViewModel
 import com.google.mediapipe.examples.objectdetection.ObjectDetectorHelper
-import com.google.mediapipe.examples.objectdetection.OverlayView
+import com.google.mediapipe.examples.objectdetection.OverlayViewWebcam
 import com.google.mediapipe.examples.objectdetection.R
 import com.google.mediapipe.examples.objectdetection.databinding.FragmentWebcamBinding
+import com.google.mediapipe.examples.objectdetection.utils.ModelManager
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.jiangdg.ausbc.MultiCameraClient
+import com.jiangdg.ausbc.base.CameraFragment
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
-import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
-import com.jiangdg.ausbc.utils.ToastUtils.show
-import com.jiangdg.ausbc.widget.AspectRatioTextureView
+import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.widget.IAspectRatio
-import com.jiangdg.usb.USBMonitor
-import com.jiangdg.uvc.UVCCamera
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
+class WebcamFragment : CameraFragment(), ObjectDetectorHelper.DetectorListener {
+    private val TAG = "ObjectDetection"
+    private var _binding: FragmentWebcamBinding? = null
+    private val binding get() = _binding!!
 
-class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
-    private lateinit var mUVCCameraView: AspectRatioTextureView
-    private lateinit var mUSBMonitor: USBMonitor
-    private var mUVCCamera: UVCCamera? = null
-
-    private lateinit var overlay: OverlayView
+    private lateinit var overlay: OverlayViewWebcam
     private lateinit var objectDetectorHelper: ObjectDetectorHelper
+    private val viewModel: MainViewModel by activityViewModels()
+
+    private var initialModelPath: String = ""
+    private val modelMap = mutableMapOf<String, String>()
 
     private val DEFAULT_PREVIEW_WIDTH = 640
     private val DEFAULT_PREVIEW_HEIGHT = 480
-
-    override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
-        val view = inflater.inflate(R.layout.fragment_webcam, container, false)
-
-        overlay = view.findViewById(R.id.overlay)
-        mUVCCameraView = view.findViewById(R.id.textureView)
-
-        return view
-    }
-
     private val detectionInterval = 150L
     private var detectionJob: Job? = null
 
-    private fun startRealTimeDetection() {
-//        Toast.makeText(context, "startRealTimeDetection dipanggil", Toast.LENGTH_SHORT).show()
+    // Replace your existing onCreateView with this:
+    override fun getRootView(inflater: LayoutInflater, container: ViewGroup?): View? {
+        _binding = FragmentWebcamBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+    override fun onCameraState(
+        self: MultiCameraClient.ICamera,
+        code: ICameraStateCallBack.State,
+        msg: String?
+    ) {
+        when (code) {
+            ICameraStateCallBack.State.OPENED -> {
+                Log.d(TAG, "USB Camera Opened")
+            }
+            ICameraStateCallBack.State.CLOSED -> {
+                Log.d(TAG, "USB Camera Closed")
+            }
+            ICameraStateCallBack.State.ERROR -> {
+                Log.e(TAG, "USB Camera Error: $msg")
+                Toast.makeText(context, "Camera Error: $msg", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        overlay = binding.overlay
+
+        // Setup MediaPipe Object Detector
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
+            loadModelAndStartDetection()
+        }
+
+        initBottomSheetControls()
+        setupSyncButton()
+        setupRotationLayout()
+    }
+
+    private suspend fun loadModelAndStartDetection() {
+        try {
+            val defaultModel = "efficientdet-lite0.tflite"
+            copyModelFromAssets(defaultModel)
+
+            val modelDir = File(requireContext().filesDir, "models")
+            val modelFile = modelDir.listFiles { _, name -> name.endsWith(".tflite") }?.firstOrNull()
+            initialModelPath = modelFile?.absolutePath ?: ""
+
+            if (initialModelPath.isNotEmpty()) {
+                objectDetectorHelper = withContext(Dispatchers.IO) {
+                    ObjectDetectorHelper(
+                        context = requireContext(),
+                        threshold = viewModel.currentThreshold,
+                        currentDelegate = viewModel.currentDelegate,
+                        modelPath = initialModelPath,
+                        maxResults = viewModel.currentMaxResults,
+                        objectDetectorListener = this@WebcamFragment,
+                        runningMode = RunningMode.LIVE_STREAM
+                    )
+                }
+
+                populateModelSpinner()
+                startRealTimeDetection()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Gagal load model", e)
+            Toast.makeText(requireContext(), "Gagal memuat model: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private suspend fun copyModelFromAssets(fileName: String) {
+        val outputDir = File(requireContext().filesDir, "models")
+        if (!outputDir.exists()) outputDir.mkdirs()
+
+        val outputFile = File(outputDir, fileName)
+        if (outputFile.exists()) return
+
+        withContext(Dispatchers.IO) {
+            requireContext().assets.open(fileName).use { input ->
+                FileOutputStream(outputFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+    }
+
+    // ==================== CameraFragment Override ====================
+
+    override fun getCameraView(): IAspectRatio? {
+        return binding.textureView
+    }
+
+    override fun getCameraViewContainer(): ViewGroup? {
+        return binding.webcamContainer
+    }
+
+    override fun getCameraRequest(): CameraRequest {
+        return CameraRequest.Builder()
+            .setPreviewWidth(DEFAULT_PREVIEW_WIDTH)
+            .setPreviewHeight(DEFAULT_PREVIEW_HEIGHT)
+            .setRenderMode(CameraRequest.RenderMode.OPENGL)
+            .setPreviewFormat(CameraRequest.PreviewFormat.FORMAT_MJPEG)
+            .setAspectRatioShow(true)
+            .create()
+    }
+
+    // ==================== Detection ====================
+
+    private fun startRealTimeDetection() {
         detectionJob?.cancel()
-        detectionJob = viewLifecycleOwner.lifecycleScope.launch  {
+        detectionJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isActive) {
                 detectFromWebcam()
                 delay(detectionInterval)
@@ -78,238 +176,143 @@ class WebcamFragment : Fragment(), ObjectDetectorHelper.DetectorListener {
     }
 
     private fun detectFromWebcam() {
-//        Toast.makeText(context, "detectFromWebcam dipanggil", Toast.LENGTH_SHORT).show()
+        if (!isAdded || binding.textureView.bitmap == null) return
 
-        val bitmap = try {
-            mUVCCameraView.getBitmap()?.let { frame ->
-                Bitmap.createScaledBitmap(frame, 384, 384, true)
-            }
+        try {
+            val frameBitmap = binding.textureView.getBitmap() ?: return
+            val cropped = cropBitmapToSquare(frameBitmap)
+            val inputBitmap = Bitmap.createScaledBitmap(cropped, 384, 384, true)
+
+            objectDetectorHelper.detectFromBitmap(inputBitmap, getDeviceRotation())
         } catch (e: Exception) {
-            context?.let {
-                Toast.makeText(
-                    context,
-                    "Error di detectFromWebcam: ${e.message}",
-                    Toast.LENGTH_SHORT
-                ).show()
-                null
-            }
-        }
-
-        bitmap?.let {
-            objectDetectorHelper.detectFromBitmap(it, getDeviceRotation())
+            Log.e(TAG, "Error detectFromWebcam", e)
         }
     }
 
+    private fun cropBitmapToSquare(bitmap: Bitmap): Bitmap {
+        val side = minOf(bitmap.width, bitmap.height)
+        val x = (bitmap.width - side) / 2
+        val y = (bitmap.height - side) / 2
+        return Bitmap.createBitmap(bitmap, x, y, side, side)
+    }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-//        Toast.makeText(context, "onViewCreated dipanggil", Toast.LENGTH_SHORT).show()
+    private fun getDeviceRotation(): Int {
+        return if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 90 else 0
+    }
 
-        context?.let { safeContext ->
-            objectDetectorHelper = ObjectDetectorHelper(
-                context = safeContext,
-                runningMode = RunningMode.LIVE_STREAM,
-                objectDetectorListener = this
-            )
-            overlay.setRunningMode(RunningMode.LIVE_STREAM)
+    // ==================== UI & Model Spinner ====================
+
+    private fun setupRotationLayout() {
+        view?.viewTreeObserver?.addOnGlobalLayoutListener {
+            // Rotation handling code (bisa kamu sesuaikan lagi)
+        }
+    }
+
+    private fun populateModelSpinner() {
+        val modelDir = File(requireContext().filesDir, "models")
+        modelMap.clear()
+
+        modelDir.listFiles { _, name -> name.endsWith(".tflite") }?.forEach { file ->
+            val displayName = file.name.removeSuffix(".tflite").replace("_", " ")
+            modelMap[displayName] = file.name
         }
 
-        // Inisialisasi view
-        val textureView = view.findViewById<AspectRatioTextureView>(R.id.textureView)
-        val cameraContainer = view.findViewById<FrameLayout>(R.id.webcam_container)
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modelMap.keys.toList())
+        binding.bottomSheetLayout.spinnerModel.adapter = adapter
+    }
 
-        val bottomNavigationView = requireActivity().findViewById<BottomNavigationView>(R.id.navigation)
-        val toolbarView = requireActivity().findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+    private fun initBottomSheetControls() {
+        binding.bottomSheetLayout.spinnerModel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selectedName = parent?.getItemAtPosition(position).toString()
+                val fileName = modelMap[selectedName] ?: return
+                val newPath = File(requireContext().filesDir, "models/$fileName").absolutePath
 
-        // Deteksi perubahan orientasi
-        view.viewTreeObserver.addOnGlobalLayoutListener {
-            context?.let { safeContext ->
-//            val orientation = resources.configuration.orientation
-                val orientation = context?.resources?.configuration?.orientation
-                val displayMetrics = resources.displayMetrics
-
-                if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                    // Landscape mode - lebarkan 70% dari lebar layar
-                    val targetWidth = (displayMetrics.widthPixels * 0.8).toInt()
-                    val targetHeight =
-                        (targetWidth * DEFAULT_PREVIEW_HEIGHT / DEFAULT_PREVIEW_WIDTH)
-
-                    val params = cameraContainer.layoutParams as ConstraintLayout.LayoutParams
-                    params.dimensionRatio = null
-                    params.width = targetWidth
-                    params.height = targetHeight
-                    params.matchConstraintMaxWidth = displayMetrics.widthPixels // Batas maksimum
-                    cameraContainer.layoutParams = params
-
-                    textureView.setAspectRatio(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
-
-                    // Sembunyikan bottom nav
-                    bottomNavigationView.visibility = View.GONE
-                    toolbarView.visibility = View.GONE
-
-                } else {
-                    // Portrait mode - 4:3 aspect ratio di tengah
-                    val params = cameraContainer.layoutParams as ConstraintLayout.LayoutParams
-                    params.dimensionRatio = "H,4:3" // Set aspect ratio 4:3 (height:width)
-                    params.width = 0
-                    params.height = 0
-                    cameraContainer.layoutParams = params
-
-                    textureView.setAspectRatio(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
-                }
-            }
-        }
-
-        context?.let { ctx ->
-        mUSBMonitor = USBMonitor(requireContext(), object : USBMonitor.OnDeviceConnectListener {
-
-            override fun onAttach(device: UsbDevice) {
-                context?.let {
-                    Toast.makeText(
-                        context,
-                        "Device attached: ${device.deviceName}",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-                    mUSBMonitor.requestPermission(device)
-            }
-
-            override fun onConnect(
-                device: UsbDevice?,
-                controlBlock: USBMonitor.UsbControlBlock?,
-                createNew: Boolean
-            ) {
-                activity?.runOnUiThread {
-                    try {
-//                        Toast.makeText(context, "onConnect: mencoba membuka kamera", Toast.LENGTH_SHORT).show()
-                        mUVCCamera = UVCCamera().apply {
-                            open(controlBlock)
-                            setPreviewSize(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT, UVCCamera.FRAME_FORMAT_MJPEG)
-                            setPreviewTexture(mUVCCameraView.surfaceTexture)
-                            startPreview()
+                if (newPath != objectDetectorHelper.modelPath) {
+                    detectionJob?.cancel()
+                    lifecycleScope.launch {
+                        withContext(Dispatchers.IO) {
+                            objectDetectorHelper.changeModel(newPath)
                         }
-
-//                        Toast.makeText(context, "Preview dimulai", Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                        context?.let {
-                            Toast.makeText(
-                                context,
-                                "Gagal membuka kamera: ${e.message}",
-                                Toast.LENGTH_LONG
-                            ).show()
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Model diubah ke $selectedName", Toast.LENGTH_SHORT).show()
+                            startRealTimeDetection()
                         }
                     }
                 }
             }
 
-            override fun onDisconnect(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
-                context?.let {
-                    Toast.makeText(context, "Camera disconnected", Toast.LENGTH_SHORT).show()
-                }
-                    mUVCCamera?.stopPreview()
-                mUVCCamera?.destroy()
-                mUVCCamera = null
-            }
-
-            override fun onDetach(device: UsbDevice?) {
-                context?.let {
-                Toast.makeText(context, "Webcam dicabut", Toast.LENGTH_SHORT).show()
-                }
-            }
-
-            override fun onCancel(device: UsbDevice?) {
-                context?.let {
-                    Toast.makeText(context, "Izin USB ditolak", Toast.LENGTH_SHORT).show()
-                }
-            }
-        })
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
 
-    // Get device rotation to pass to the detector
-    private fun getDeviceRotation(): Int {
-        return when (resources.configuration.orientation) {
-            Configuration.ORIENTATION_LANDSCAPE -> 90
-            else -> 0
+    private fun setupSyncButton() {
+        binding.bottomSheetLayout.syncButton.setOnClickListener {
+            syncModels()
         }
     }
+
+    private fun syncModels() {
+        val btn = binding.bottomSheetLayout.syncButton
+        btn.isEnabled = false
+        btn.text = "Syncing..."
+
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    ModelManager.getModelFilePath(requireContext())
+                }
+                Toast.makeText(context, "Sync berhasil!", Toast.LENGTH_SHORT).show()
+                loadModelAndStartDetection()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Sync gagal: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                btn.text = "Sync Models"
+                btn.isEnabled = true
+            }
+        }
+    }
+
+    // ==================== Detector Listener ====================
 
     override fun onResults(resultBundle: ObjectDetectorHelper.ResultBundle) {
         activity?.runOnUiThread {
-            try {
-                val result = resultBundle.results.firstOrNull() ?: return@runOnUiThread
-
-                overlay.setResults(
-                    result,
-                    resultBundle.inputImageHeight,
-                    resultBundle.inputImageWidth,
+            val detections = resultBundle.results.firstOrNull()?.detections() ?: emptyList()
+            if (detections.isNotEmpty()) {
+                binding.overlay.setResults(
+                    resultBundle.results.first(),
+                    DEFAULT_PREVIEW_HEIGHT,
+                    DEFAULT_PREVIEW_WIDTH,
                     resultBundle.inputImageRotation
                 )
-            } catch (e: Exception) {
-                context?.let {
-                    Toast.makeText(it, "Error saat proses hasil deteksi: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+            } else {
+                binding.overlay.clear()
             }
+            binding.overlay.invalidate()
         }
     }
 
-
-
     override fun onError(error: String, errorCode: Int) {
-        context?.let {
-            Toast.makeText(context, "Terjadi kesalahan: $error ($errorCode)", Toast.LENGTH_SHORT)
-                .show()
+        activity?.runOnUiThread {
+            Toast.makeText(requireContext(), error, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // ==================== Lifecycle ====================
+
+    override fun onDestroyView() {
+        detectionJob?.cancel()
+        _binding = null
+        super.onDestroyView()
     }
 
     override fun onStart() {
         super.onStart()
-
-        context?.let { ctx ->
-            AlertDialog.Builder(ctx)
-                .setTitle("Gunakan Webcam")
-                .setMessage(
-                    "1. Pastikan webcam sudah tersambung\n\n" +
-                            "2. Pastikan memilih transfer file\n\n" +
-                            "3. Jika muncul dialog izin, tekan oke"
-                )
-                .setIcon(R.drawable.webcam)
-                .setPositiveButton("Saya Mengerti") { dialog, _ ->
-                    dialog.dismiss()
-                }
-                .setCancelable(false)
-                .create()
-                .apply {
-                    show()
-                    getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(
-                        ContextCompat.getColor(ctx, R.color.mp_primary)
-                    )
-                }
-        }
-
-        mUSBMonitor.register()
-        startRealTimeDetection()
+        // Dialog panduan
+        AlertDialog.Builder(requireContext())
+            .setTitle("Webcam USB")
+            .setMessage("Pastikan webcam terhubung dan izinkan izin USB.")
+            .setPositiveButton("Mengerti") { dialog, _ -> dialog.dismiss() }
+            .show()
     }
-
-    override fun onStop() {
-        super.onStop()
-        mUSBMonitor.unregister()
-        mUVCCamera?.stopPreview()
-        mUVCCamera?.destroy()
-        detectionJob?.cancel()
-        mUVCCamera = null
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        mUSBMonitor.unregister()
-        mUVCCamera?.stopPreview()
-        mUVCCamera?.destroy()
-        detectionJob?.cancel()
-        mUVCCamera = null
-    }
-
-
 }
-
-

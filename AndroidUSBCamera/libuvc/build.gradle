@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.library'
+    id 'kotlin-android'
+}
+
+android {
+    namespace 'com.jiangdg.libuvc'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 21
+        targetSdk 34
+
+        // ndk {
+        //     abiFilters 'armeabi-v7a', 'arm64-v8a'
+        // }
+    }
+
+    // === COMMENT atau HAPUS SEMUA INI ===
+    // externalNativeBuild {
+    //     cmake {
+    //         path "src/main/cpp/CMakeLists.txt"
+    //         version "3.22.1"
+    //     }
+    // }
+
+    // ndkVersion "21.4.7075529"
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = '11'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+
+    // Tambahkan ini
+    implementation 'com.elvishew:xlog:1.11.0'
+}

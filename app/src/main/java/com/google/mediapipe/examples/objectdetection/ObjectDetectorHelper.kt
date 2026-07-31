@@ -27,6 +27,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.camera.core.ImageProxy
+import com.google.mediapipe.examples.objectdetection.utils.ModelManager.getModelFilePath
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
@@ -40,11 +41,11 @@ class ObjectDetectorHelper(
     var threshold: Float = THRESHOLD_DEFAULT,
     var maxResults: Int = MAX_RESULTS_DEFAULT,
     var currentDelegate: Int = DELEGATE_CPU,
-    var currentModel: Int = efficientdet_lite2_cengkeh_V2,
+    var modelPath: String,
     var runningMode: RunningMode = RunningMode.IMAGE,
     val context: Context,
     // The listener is only used when running in RunningMode.LIVE_STREAM
-    var objectDetectorListener: DetectorListener? = null
+    var objectDetectorListener: DetectorListener? = null,
 ) {
 
     // For this example this needs to be a var so it can be reset on changes. If the ObjectDetector
@@ -66,8 +67,13 @@ class ObjectDetectorHelper(
     // thread that is using it. CPU can be used with detectors
     // that are created on the main thread and used on a background thread, but
     // the GPU delegate needs to be used on the thread that initialized the detector
+
     fun setupObjectDetector() {
         // Set general detection options, including number of used threads
+        if (modelPath.isEmpty()) {
+            objectDetectorListener?.onError("Model path is empty.")
+            return
+        }
         val baseOptionsBuilder = BaseOptions.builder()
 
         // Use the specified hardware for running the model. Default to CPU
@@ -82,12 +88,8 @@ class ObjectDetectorHelper(
             }
         }
 
-        val modelName = when (currentModel) {
-            efficientdet_lite2_cengkeh_V2 -> "efficientdet_lite2_cengkeh_V2.tflite"
-            else -> "efficientdet-lite0.tflite"
-        }
-
-        baseOptionsBuilder.setModelAssetPath(modelName)
+        baseOptionsBuilder.setModelAssetPath(modelPath)
+//        baseOptionsBuilder.setModelFilePath(currentModelPath)
 
         // Check if runningMode is consistent with objectDetectorListener
         when (runningMode) {
@@ -141,6 +143,12 @@ class ObjectDetectorHelper(
                 "Object detector failed to load model with error: " + e.message
             )
         }
+    }
+
+    fun changeModel(newModelPath: String) {
+        modelPath = newModelPath
+        clearObjectDetector()
+        setupObjectDetector()
     }
 
     // Return running status of recognizer helper
@@ -389,4 +397,5 @@ class ObjectDetectorHelper(
         fun onError(error: String, errorCode: Int = OTHER_ERROR)
         fun onResults(resultBundle: ResultBundle)
     }
+
 }

@@ -31,8 +31,9 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.objectdetector.ObjectDetectorResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.BeforeClass
-import org.junit.Test
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.BeforeAll
 import org.junit.runner.RunWith
 import java.io.File
 import java.io.FileOutputStream
@@ -55,7 +56,7 @@ class ObjectDetectorTest {
         private lateinit var lock: ReentrantLock
         private lateinit var condition: Condition
 
-        @BeforeClass
+        @BeforeAll
         @JvmStatic
         fun setup() {
             lock = ReentrantLock()
@@ -80,12 +81,14 @@ class ObjectDetectorTest {
      * Verify that the result returned from the Object Detector Helper with
      * LIVE_STREAM mode is within the acceptable range to the expected result.
      */
-    @Test
+    @org.junit.jupiter.api.Test
     fun detectionResultsFromLiveStreamModeFallsWithinAcceptedRange() {
         var detectionResult: ObjectDetectorResult? = null
+        val modelPath = "efficientdet_lite0.tflite"
         val objectDetectorHelper = ObjectDetectorHelper(
             context = ApplicationProvider.getApplicationContext(),
             runningMode = RunningMode.LIVE_STREAM,
+            modelPath = modelPath,
             objectDetectorListener =
             object : ObjectDetectorHelper.DetectorListener {
                 override fun onError(error: String, errorCode: Int) {
@@ -146,9 +149,12 @@ class ObjectDetectorTest {
      */
     @Test
     fun detectionResultsFromVideoModeFallsWithinAcceptedRange() {
+        val modelPath = "efficientdet_lite0.tflite"
+
         val objectDetectorHelper = ObjectDetectorHelper(
             context = ApplicationProvider.getApplicationContext(),
-            runningMode = RunningMode.VIDEO
+            runningMode = RunningMode.VIDEO,
+            modelPath = modelPath
         )
 
         val videoUri = getVideoUri(TEST_VIDEO_NAME)
@@ -203,11 +209,14 @@ class ObjectDetectorTest {
      * Verify that the result returned from the Object Detector Helper with
      * IMAGE mode is within the acceptable range to the expected result.
      */
-    @Test
+    @org.junit.jupiter.api.Test
     fun detectionResultsFromImageModeFallsWithinAcceptedRange() {
+        val modelPath = "efficientdet_lite0.tflite"
+
         val objectDetectorHelper = ObjectDetectorHelper(
             context = ApplicationProvider.getApplicationContext(),
-            runningMode = RunningMode.IMAGE
+            runningMode = RunningMode.IMAGE,
+            modelPath = modelPath
         )
 
         val bitmap = loadImage(TEST_IMAGE_NAME)
